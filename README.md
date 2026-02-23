@@ -3,7 +3,7 @@
 Git-style branching for local development databases.
 
 [![npm version](https://img.shields.io/npm/v/dbranch)](https://www.npmjs.com/package/dbranch)
-[![license](https://img.shields.io/npm/l/dbranch)](https://github.com/Hololm/dbranch/blob/main/LICENSE)
+[![license](https://img.shields.io/badge/license-MIT-blue)](https://github.com/Hololm/dbranch/blob/main/LICENSE)
 
 Switch git branches without losing your database state. dbranch automatically snapshots and restores your local database when you check out a branch.
 
