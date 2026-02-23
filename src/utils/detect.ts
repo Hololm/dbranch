@@ -2,6 +2,9 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { execa } from "execa";
 
+const IS_WINDOWS = process.platform === "win32";
+const pgExeca: typeof execa = IS_WINDOWS ? execa({ shell: true }) : execa;
+
 export interface DetectedDatabase {
   driver: "sqlite" | "postgres";
   connection: {
@@ -57,7 +60,7 @@ async function detectPostgresFromEnv(repoRoot: string): Promise<DetectedDatabase
 
 async function isPgDumpAvailable(): Promise<boolean> {
   try {
-    await execa("pg_dump", ["--version"]);
+    await pgExeca("pg_dump", ["--version"]);
     return true;
   } catch {
     return false;
