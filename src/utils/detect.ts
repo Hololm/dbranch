@@ -1,9 +1,35 @@
 import fs from "node:fs/promises";
+import fsSync from "node:fs";
 import path from "node:path";
 import { execa } from "execa";
 
-const IS_WINDOWS = process.platform === "win32";
-const pgExeca: typeof execa = IS_WINDOWS ? execa({ shell: true }) : execa;
+function findWindowsPgBinDir(): string | null {
+  const searchDirs = [
+    "C:\\Program Files\\PostgreSQL",
+    "C:\\Program Files (x86)\\PostgreSQL",
+  ];
+  for (const dir of searchDirs) {
+    try {
+      const versions = fsSync.readdirSync(dir).sort().reverse();
+      for (const version of versions) {
+        const bin = path.join(dir, version, "bin", "pg_dump.exe");
+        if (fsSync.existsSync(bin)) {
+          return path.join(dir, version, "bin");
+        }
+      }
+    } catch {
+      // Directory doesn't exist
+    }
+  }
+  return null;
+}
+
+function resolvePgCommand(command: string): string {
+  if (process.platform !== "win32") return command;
+  const pgBin = findWindowsPgBinDir();
+  if (pgBin) return path.join(pgBin, command + ".exe");
+  return command;
+}
 
 export interface DetectedDatabase {
   driver: "sqlite" | "postgres";
@@ -60,7 +86,7 @@ async function detectPostgresFromEnv(repoRoot: string): Promise<DetectedDatabase
 
 async function isPgDumpAvailable(): Promise<boolean> {
   try {
-    await pgExeca("pg_dump", ["--version"]);
+    await execa(resolvePgCommand("pg_dump"), ["--version"]);
     return true;
   } catch {
     return false;

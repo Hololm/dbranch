@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import fsSync from "node:fs";
 import path from "node:path";
 import { execa } from "execa";
 import type { DatabaseDriver, SnapshotInfo } from "./base.js";
@@ -8,8 +9,34 @@ import { sanitizeBranchName, desanitizeBranchName } from "../utils/git.js";
 import { DbranchError } from "../utils/errors.js";
 
 const EXTENSION = ".dump";
-const IS_WINDOWS = process.platform === "win32";
-const pgExeca: typeof execa = IS_WINDOWS ? execa({ shell: true }) : execa;
+
+function findWindowsPgBinDir(): string | null {
+  const searchDirs = [
+    "C:\\Program Files\\PostgreSQL",
+    "C:\\Program Files (x86)\\PostgreSQL",
+  ];
+  for (const dir of searchDirs) {
+    try {
+      const versions = fsSync.readdirSync(dir).sort().reverse();
+      for (const version of versions) {
+        const bin = path.join(dir, version, "bin", "pg_dump.exe");
+        if (fsSync.existsSync(bin)) {
+          return path.join(dir, version, "bin");
+        }
+      }
+    } catch {
+      // Directory doesn't exist
+    }
+  }
+  return null;
+}
+
+function resolvePgCommand(command: string): string {
+  if (process.platform !== "win32") return command;
+  const pgBin = findWindowsPgBinDir();
+  if (pgBin) return path.join(pgBin, command + ".exe");
+  return command;
+}
 
 export class PostgresDriver implements DatabaseDriver {
   private connection: PostgresConnection;
@@ -49,8 +76,8 @@ export class PostgresDriver implements DatabaseDriver {
     const tmpPath = snapshotPath + ".tmp";
 
     try {
-      await pgExeca(
-        "pg_dump",
+      await execa(
+        resolvePgCommand("pg_dump"),
         [
           "--format=custom",
           `--file=${tmpPath}`,
@@ -90,8 +117,8 @@ export class PostgresDriver implements DatabaseDriver {
     // Create a safety backup before destructive operations
     const backupPath = path.join(this.snapshotsDir, `_pre_restore_backup${EXTENSION}`);
     try {
-      await pgExeca(
-        "pg_dump",
+      await execa(
+        resolvePgCommand("pg_dump"),
         [
           "--format=custom",
           `--file=${backupPath}`,
@@ -106,7 +133,7 @@ export class PostgresDriver implements DatabaseDriver {
 
     // Drop and recreate database
     try {
-      await pgExeca("dropdb", ["--if-exists", ...connArgs, this.connection.database], { env });
+      await execa(resolvePgCommand("dropdb"), ["--if-exists", ...connArgs, this.connection.database], { env });
     } catch (err) {
       throw new DbranchError(
         `Failed to drop database "${this.connection.database}". Make sure no applications are connected to it.\n${(err as Error).message}`,
@@ -115,7 +142,7 @@ export class PostgresDriver implements DatabaseDriver {
     }
 
     try {
-      await pgExeca("createdb", [...connArgs, this.connection.database], { env });
+      await execa(resolvePgCommand("createdb"), [...connArgs, this.connection.database], { env });
     } catch (err) {
       throw new DbranchError(
         `Failed to create database "${this.connection.database}": ${(err as Error).message}`,
@@ -124,8 +151,8 @@ export class PostgresDriver implements DatabaseDriver {
     }
 
     try {
-      await pgExeca(
-        "pg_restore",
+      await execa(
+        resolvePgCommand("pg_restore"),
         [
           `--dbname=${this.connection.database}`,
           ...connArgs,
@@ -147,9 +174,9 @@ export class PostgresDriver implements DatabaseDriver {
       if (stderr.includes("ERROR")) {
         // Attempt to recover from backup
         try {
-          await pgExeca("dropdb", ["--if-exists", ...connArgs, this.connection.database], { env });
-          await pgExeca("createdb", [...connArgs, this.connection.database], { env });
-          await pgExeca(
+          await execa(resolvePgCommand("dropdb"), ["--if-exists", ...connArgs, this.connection.database], { env });
+          await execa(resolvePgCommand("createdb"), [...connArgs, this.connection.database], { env });
+          await execa(
             "pg_restore",
             [
               `--dbname=${this.connection.database}`,
@@ -204,20 +231,34 @@ export class PostgresDriver implements DatabaseDriver {
 
   async validate(): Promise<boolean> {
     try {
-      await pgExeca("pg_dump", ["--version"]);
+      await execa(resolvePgCommand("pg_dump"), ["--version"]);
     } catch {
       throw new DbranchError(
         "pg_dump not found. Install PostgreSQL client tools (e.g., `brew install postgresql` or `apt install postgresql-client`).",
       );
     }
 
+    // Verify the server is reachable
     try {
-      await pgExeca("pg_isready", [...this.getConnectionArgs()], {
+      await execa(resolvePgCommand("pg_isready"), [...this.getConnectionArgs()], {
         env: this.getEnv(),
       });
-      return true;
     } catch {
       return false;
+    }
+
+    // Verify credentials by running a simple query via pg_dump
+    try {
+      await execa(
+        resolvePgCommand("pg_dump"),
+        [...this.getConnectionArgs(), "--schema-only", "-t", "pg_catalog.pg_class", this.connection.database],
+        { env: this.getEnv() },
+      );
+      return true;
+    } catch {
+      throw new DbranchError(
+        `Could not connect to database "${this.connection.database}". Check your credentials and make sure the database exists.`,
+      );
     }
   }
 

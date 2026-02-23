@@ -130,10 +130,9 @@ export async function initCommand(): Promise<void> {
   const driverInstance = await createDriver(config, repoRoot);
   const isValid = await driverInstance.validate();
   if (!isValid) {
-    logger.warn("Could not validate database connection. Continuing anyway...");
-  } else {
-    logger.verbose("Database connection validated.");
+    throw new DbranchError("Could not connect to database. Check that the server is running and your credentials are correct.");
   }
+  logger.verbose("Database connection validated.");
 
   // Install git hook
   await installHook(repoRoot);
