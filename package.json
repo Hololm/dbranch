@@ -31,6 +31,15 @@
     "postgres",
     "cli"
   ],
+  "author": "Hololm",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Hololm/dbranch.git"
+  },
+  "homepage": "https://github.com/Hololm/dbranch#readme",
+  "bugs": {
+    "url": "https://github.com/Hololm/dbranch/issues"
+  },
   "license": "MIT",
   "dependencies": {
     "chalk": "^5.4.1",
