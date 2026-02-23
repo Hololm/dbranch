@@ -1,6 +1,6 @@
 {
   "name": "dbranch",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Git-style branching for local development databases",
   "type": "module",
   "bin": {
